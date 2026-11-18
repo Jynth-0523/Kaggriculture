@@ -1,189 +1,189 @@
 # Kaggriculture Agent · Round54
 
-面向 Kaggriculture 农场经营对战的单文件 Python agent：把种植、畜牧、工人调度、运输和销售放在同一套行动与资金约束下协调，以**完整对局的胜负与保住已有胜局**作为版本验收标准。
+A single-file Python agent for Kaggriculture farm-management matches. It coordinates crops, livestock, worker scheduling, transport, and sales under shared action and cash constraints. Version acceptance is based on **full-match outcomes and preserving previously won matches**.
 
-这里保存的是本项目最后通过完整本地对照测试的 **Round54 CARROT** 版本，不是编号更大但未通过验收的实验版本。代码按原始交付文件逐字节保留，没有为了发布重新裁剪或重构。
+This repository archives **Round54 CARROT**, the last version in this project to pass the full local comparison tests, rather than a later-numbered experimental version that did not pass acceptance. The code is preserved byte for byte from the original delivery; it was not trimmed or refactored for publication.
 
-> 这是研究与比赛代码归档，不是“必胜”策略。2026 年 9 月的历史本地测试不代表当前线上胜率，也没有在发布归档时重新跑一轮 1024 场测试。
+> This is a research and competition code archive, not a guaranteed winning strategy. Historical local tests from September 2026 do not represent the current online win rate. The 1,024-match suite was not rerun when this archive was published.
 
-## 快速了解
+## At a Glance
 
-| 项目 | 说明 |
+| Item | Details |
 | --- | --- |
-| 交付代码 | `main.py`，包含策略、内嵌数据及模型辅助逻辑 |
-| 最终入口 | `macro_cycles_entrypoint54(observation, configuration=None)` |
-| 入口别名 | `agent` 与 `kaggle_submission_agent` |
-| 运行方式 | 由 Kaggriculture 环境逐步传入 observation，返回动作字典 |
-| 外部服务 | 不需要 LLM API、API key 或联网推理 |
-| 学习方式 | 规则、离线积累的路线数据与局内状态估计；不是在线神经网络训练 |
-| 历史验收 | 1024 场完整本地对局：858 胜、166 负 |
-| 相对 Round53 | 新增 12 场胜局，原胜局丢失 0 场 |
+| Delivered code | `main.py`, including the strategy, embedded data, and model-support logic |
+| Final entry point | `macro_cycles_entrypoint54(observation, configuration=None)` |
+| Entry-point aliases | `agent` and `kaggle_submission_agent` |
+| Execution | The Kaggriculture environment supplies an observation at each step; the agent returns an action dictionary |
+| External services | No LLM API, API key, or network-based inference required |
+| Learning approach | Rules, offline-collected route data, and in-match state estimation; not online neural-network training |
+| Historical acceptance test | 1,024 complete local matches: 858 wins and 166 losses |
+| Compared with Round53 | 12 newly won matches, with 0 previously won matches lost |
 
-## 代码与使用
+## Code and Usage
 
-`main.py` 是可导入的策略文件，不是带命令行交互界面的游戏程序。直接执行 `python main.py` 不会替你启动完整对局。
+`main.py` is an importable strategy file, not a game program with an interactive command-line interface. Running `python main.py` does not start a complete match.
 
-从本目录检查最终入口：
+Check the final entry point from this directory:
 
 ```bash
 python -c "import main; assert main.agent is main.kaggle_submission_agent; print(main.agent.__name__)"
 ```
 
-预期输出：
+Expected output:
 
 ```text
 macro_cycles_entrypoint54
 ```
 
-在提供正确 observation 的环境中调用：
+Call the agent in an environment that supplies a valid observation:
 
 ```python
 from main import agent
 
-# observation 必须来自兼容的 Kaggriculture 环境。
-# configuration 由该环境提供；不要用空字典伪造 observation。
+# observation must come from a compatible Kaggriculture environment.
+# configuration is supplied by that environment; do not fake observation with {}.
 action = agent(observation, configuration)
 ```
 
-代码使用 Python 标准库；完整对局仍需要另行准备官方游戏环境及对手。应在各自隔离的进程/模块实例中加载双方 agent，避免模块级局内状态相互污染。不要跳过 step 0 初始化或在多场并发对局间共享同一个策略模块实例。
+The code uses the Python standard library. Complete matches still require the official game environment and opponents, which must be prepared separately. Load the two agents in isolated processes or module instances to prevent their module-level, in-match state from interfering with each other. Do not skip step 0 initialization or share one strategy module instance across concurrent matches.
 
-如需提交到 Kaggle，应使用本目录的原始 `main.py`，并先确认比赛当前是否开放、上传要求和环境版本是否仍兼容。此归档操作本身不会提交比赛。
+For a Kaggle submission, use the original `main.py` in this directory and first check whether the competition is open, what its upload requirements are, and whether the environment version remains compatible. Publishing this archive does not itself submit an entry to the competition.
 
-### 文件完整性
+### File Integrity
 
-发布版本的 SHA-256：
+SHA-256 of the published version:
 
 ```text
 6df684d1ceac5f3ba03db799ec590e8985ce5b605aace6370ac8446a28c8b4f1
 ```
 
-跨平台校验：
+Cross-platform verification:
 
 ```bash
 python -c "import hashlib,pathlib; print(hashlib.sha256(pathlib.Path('main.py').read_bytes()).hexdigest())"
 ```
 
-修改空白、换行或注释也会改变哈希。需要继续研究时，请另建实验版本，不要把修改后的文件称为上述已验收快照。
+Changing whitespace, line endings, or comments also changes the hash. For further research, create a separate experimental version; do not describe a modified file as the validated snapshot identified above.
 
-## 策略结构
+## Strategy Architecture
 
-### 1. 保留生产底座，协调后续动作
+### 1. Preserve the Production Foundation and Coordinate Follow-up Actions
 
-以既有生产路线和市场控制为基础，叠加维护、库存、收获、运输与销售修补。新增策略必须考虑工人是否能到达、后续浇水与收获是否有行动位置，以及产物能否及时运回和卖出。
+The agent builds on existing production routes and market-control logic, with additional maintenance, inventory, harvesting, transport, and sales fixes. New decisions must account for worker reachability, action availability for later watering and harvesting, and whether produce can be transported back and sold in time.
 
-代码保留了多轮迭代的包装层、辅助模型和内嵌数据，因此并非从零设计的精简框架。阅读时应从文件末尾的最终入口追溯调用链；靠前的旧入口定义不能单独代表最终行为。
+The code retains wrappers, supporting models, and embedded data from multiple iterations; it is not a minimal framework designed from scratch. Start at the final entry point at the end of the file and trace its call chain. Earlier entry-point definitions alone do not describe the final behavior.
 
-### 2. 生产与物流共同规划
+### 2. Plan Production and Logistics Together
 
-已有协调层涉及库存缓冲、跨天收获回执、远端运输、路线恢复及预测动作与实际执行的一致性。预测状态与真实状态分开处理，避免把规划中的假设收获、采购或动作计成已完成事实。
+The coordination layers handle inventory buffers, cross-day harvest confirmations, remote transport, route recovery, and consistency between predicted actions and actual execution. Predicted and observed states are kept separate so that hypothetical harvests, purchases, or actions are not counted as completed events.
 
-这些机制降低特定失误风险，并不意味着所有溢仓、运输延误或路线失效都已消除。
+These mechanisms reduce specific failure risks; they do not eliminate every inventory overflow, transport delay, or route failure.
 
-### 3. 肥料与维护有机会成本
+### 3. Account for the Opportunity Cost of Fertilizer and Maintenance
 
-施肥需要与浇水、喂养、收获和运输争夺行动位置。Round54 继承 Round53 的肥料机会评估及相关修补，保留原有种麦与饲料保障逻辑，而不是为了增产无条件增加施肥。
+Fertilizing competes with watering, feeding, harvesting, and transport for action slots. Round54 inherits Round53's fertilizer opportunity evaluation and related fixes while preserving the existing wheat-growing and feed-supply logic. It does not apply more fertilizer unconditionally just to increase yields.
 
-### 4. Round54 的核心增量：完整周期的胡萝卜替换
+### 4. Round54's Main Addition: Full-Cycle Carrot Substitution
 
-对尚未开始执行的部分草莓地块计划，比较保留原计划与替换作物的完整周期收益，而不是只比较单次售价：
+For selected strawberry-plot plans that have not yet begun execution, the agent compares the full-cycle returns of keeping the original plan versus substituting another crop, rather than comparing only a single sale price:
 
-- 使用该地块既有服务时刻估算种植、浇水、收获和销售；保持后续可执行性。
-- 计入新增种子的完整成本，不把已支付的旧种子成本虚构为可回收现金。
-- 联合考虑自身后续产出与对方公开可见生产对市场的影响。
-- 对多个供给/销售情景检查自身收入与竞争收益的保守估计；收益不足则不替换。
-- 保留现金、市场订单数量和总替换地块数约束。
-- 买种后等待下一次真实观察确认到账，再启用对应生产计划；不把预测采购当作实际库存。
-- 对已存在的其他作物保持保护，不为了执行新计划任意拆掉现有生产。
+- Estimate planting, watering, harvesting, and sales using the plot's existing service schedule, while preserving downstream feasibility.
+- Include the full cost of newly purchased seeds; do not treat the cost of previously purchased seeds as recoverable cash.
+- Consider the market impact of both the agent's future output and the opponent's publicly visible production.
+- Check conservative estimates of the agent's revenue and competitive gains across multiple supply and sales scenarios; reject substitutions with insufficient benefit.
+- Retain constraints on cash, market order counts, and the total number of substituted plots.
+- After buying seeds, wait for the next actual observation to confirm receipt before activating the associated production plan; do not treat predicted purchases as actual inventory.
+- Protect existing crops rather than arbitrarily dismantling ongoing production to execute a new plan.
 
-**新增宏观小麦替换分支被禁用。** 若该分支在比较中胜出，则保留原计划，而不是自动改用次优胡萝卜方案。此禁用不等于停止原有小麦种植或饲料生产。
+**The new macro-level wheat-substitution branch is disabled.** If that branch wins the comparison, the original plan is retained instead of automatically falling back to the second-best carrot plan. This does not disable the existing wheat-growing or feed-production logic.
 
-### 5. 局内适应的边界
+### 5. Limits of In-Match Adaptation
 
-agent 会使用本场可见状态、库存回执和对手公开生产信息调整决策；它不会通过本文件自动更新跨对局模型，也不会在真实比赛中重新训练权重。离线测试与迭代仍是改进策略的重要环节。
+The agent adjusts decisions using the current match's visible state, inventory confirmations, and publicly visible opponent production. This file does not automatically update models across matches or retrain weights during real competition matches. Offline testing and iteration remain important to strategy improvement.
 
-## 历史验证结果
+## Historical Validation Results
 
-以下结果来自 2026-09-30 保存的项目验收记录。完整本地测试覆盖 16 类本地对手、32 个种子、交换双方座位，共 1024 场。
+The following results come from the project's acceptance records saved on September 30, 2026. The full local suite covered 16 local opponent types and 32 seeds with both seat assignments, for 1,024 matches in total.
 
-| 版本 | 胜 | 负 | 相对 Round53 新增胜局 | 相对 Round53 丢失旧胜 |
+| Version | Wins | Losses | Newly won matches vs. Round53 | Previously won matches lost vs. Round53 |
 | --- | ---: | ---: | ---: | ---: |
-| Round53 基线 | 846 | 178 | — | — |
-| **Round54（本文件）** | **858** | **166** | **12** | **0** |
+| Round53 baseline | 846 | 178 | — | — |
+| **Round54 (this file)** | **858** | **166** | **12** | **0** |
 
-整体本地胜率约 **83.79%**。12 场新增胜局对应 6 个种子的双座位结果，不能当作 12 个独立随机证据。
+The overall local win rate was approximately **83.79%**. The 12 newly won matches correspond to both seat assignments for 6 seeds; they should not be treated as 12 independent random observations.
 
-重点分组：
+Selected opponent groups:
 
-| 本地对手标识 | 胜 / 场次 | 说明 |
+| Local opponent identifier | Wins / Matches | Notes |
 | --- | ---: | --- |
-| `archive_mixed2_v2` | 57 / 64 | 89.06%，尚未达到 95% 目标 |
-| `archive_sheep2_v2` | 12 / 64 | 明显弱项，尚未解决 |
-| `replica` | 31 / 64 | 仍不足半数 |
+| `archive_mixed2_v2` | 57 / 64 | 89.06%; below the 95% target |
+| `archive_sheep2_v2` | 12 / 64 | A significant unresolved weakness |
+| `replica` | 31 / 64 | Still below half of the matches |
 | `opponent_115414079_v2` | 60 / 64 | 93.75% |
-| 其余六个有利对手组 | 各 64 / 64 | 仅说明这批固定本地条件下的表现 |
+| Six other favorable opponent groups | 64 / 64 each | Performance only under these fixed local conditions |
 
-这里的六组为 `harvest`、`top10`、`opponent_115415605_v2`、`opponent_115421776_v2`、`opponent_115420280_v2`、`opponent_115429426_v2`。名称只是测试标识，`top10` 并不证明覆盖当时或现在排行榜前十。
+The six groups are `harvest`, `top10`, `opponent_115415605_v2`, `opponent_115421776_v2`, `opponent_115420280_v2`, and `opponent_115429426_v2`. These names are test identifiers only; `top10` does not establish coverage of the historical or current leaderboard's top ten agents.
 
-其他检查：
+Additional checks:
 
-- 304 项规则/边界检查中，302 项通过，2 项仅适用于另一实验分支而明确跳过。
-- 完整对局记录中未发现运行/报告错误；这不等于对所有输入和硬件做出了无错误保证。
-- 本地 8 进程负载下记录的最大单步时间约 0.836 秒；不能据此保证线上机器不超时。
+- Of 304 rule and boundary checks, 302 passed. Two checks applied only to a different experimental branch and were explicitly skipped.
+- No execution or reporting errors were found in the full-match records. This is not a guarantee of error-free behavior for every input or hardware configuration.
+- The recorded maximum single-step time was approximately 0.836 seconds under a local eight-process workload. This does not guarantee that the agent will avoid timeouts on online competition hardware.
 
-### 两场真实败局的固定对手动作重跑
+### Replaying Two Actual Losses with Fixed Opponent Actions
 
-| 原回放编号 | 本地重跑最终资金差 | 结果 |
+| Original replay ID | Final cash difference in the local rerun | Result |
 | --- | ---: | --- |
-| `115949593` | +2,981 | 该固定回放条件下胜 |
-| `115951111` | −1,466 | 仍负，尚未解决 |
+| `115949593` | +2,981 | Win under this fixed-replay setup |
+| `115951111` | −1,466 | Still a loss; unresolved |
 
-这是用真实录像中的固定对手行为做的重跑，**不是与对方实时响应的原始 agent 再打一场线上比赛**。
+These reruns used fixed opponent actions from actual replays. They were **not new online matches against the original opponent agents responding in real time**.
 
-### 为什么没有发布 Round55
+### Why Round55 Was Not Published
 
-最后两次实验各筛查 100 场，使用同一批选定面板、复用 Round54 控制结果：
+The final two experiments each screened 100 matches on the same selected panel, reusing the Round54 control results:
 
-| 实验 | 实验胜场 | Round54 胜场 | 决定 |
+| Experiment | Experimental wins | Round54 wins | Decision |
 | --- | ---: | ---: | --- |
-| 扩大每天考虑的宏观地块数量 | 88 / 100 | 88 / 100 | 无新增胜局，不合入 |
-| 每次最多选中 3 块新替换地块 | 86 / 100 | 88 / 100 | 丢失 2 场旧胜，不合入 |
+| Increase the number of macro-level plots considered each day | 88 / 100 | 88 / 100 | No newly won matches; not merged |
+| Select up to 3 new substitution plots at a time | 86 / 100 | 88 / 100 | Lost 2 previously won matches; not merged |
 
-部分场次资金差改善，不等于胜率提升。因此最后推荐版本仍是 Round54。
+Improving the cash difference in some matches does not necessarily improve the win rate. Round54 therefore remained the final recommended version.
 
-## 测试证据的适用范围
+## Scope and Limitations of the Test Evidence
 
-1. 对手池包含本地策略和从录像重建的对手，不能等同于排行榜原作者程序。
-2. 测试面板被反复用于迭代，不是独立留出集；83.79% 不能当作线上胜率预测。
-3. “没有丢旧胜”仅针对上述面板，不能推出所有对手、地图或随机种子都不退步。
-4. 历史环境中，地块布局变化可能改变随机数消耗，进而影响后续商店；同种子不是完全固定的未来市场。不能将所有资金变化单独归因于作物收益。
-5. 本目录是提交代码与说明的归档，不包含整套原始回放、对手文件和完整测试运行器，不能仅凭这两个文件复现全部 1024 场。
-6. 未声称覆盖排行榜前 500 名、线上连胜、95% 全局胜率，或解决所有已知败局。
+1. The opponent pool includes local strategies and opponents reconstructed from replays; it is not equivalent to the original programs submitted by leaderboard participants.
+2. The test panel was used repeatedly during iteration and is not an independent holdout set. The 83.79% result should not be interpreted as a prediction of online win rate.
+3. "No previously won matches lost" applies only to the panel described above. It does not imply no regression against every opponent, map, or random seed.
+4. In the historical environment, changes to plot layouts could change random-number consumption and subsequently affect the shop. The same seed does not fully fix future market conditions. Not every change in cash can be attributed solely to crop returns.
+5. This directory archives the submission code and its documentation. It does not include the complete original replays, opponent files, or full test runner; these two files alone cannot reproduce all 1,024 matches.
+6. No claim is made of covering the leaderboard's top 500 agents, achieving online winning streaks or a 95% overall win rate, or resolving all known losses.
 
-后续改进建议以原快照为对照，先验证机制与动作边界，再进行同种子双座位完整对局，并单独保留未用于调参的测试集。
+For further improvements, use the original snapshot as the control. First validate mechanics and action boundaries, then run complete matches with the same seeds and both seat assignments. Maintain a separate test set that is not used for tuning.
 
-## 环境与上游来源
+## Environment and Upstream Sources
 
-本版本对应历史 Kaggriculture 环境。源码内注明的规则来源为 Kaggle `kaggle-environments` **1.32.7** 的 `kaggriculture.py`，校验值为：
+This version corresponds to the historical Kaggriculture environment. The rule source identified in the code is `kaggriculture.py` from Kaggle's `kaggle-environments` **1.32.7**, with this checksum:
 
 ```text
 bc8a54879ef02c7ea64b8b333d6a976f0ea65c4949149d01f463f23bccee653e
 ```
 
-参考入口：
+Source references:
 
-- [Kaggriculture 比赛](https://www.kaggle.com/competitions/kaggriculture)
-- [Kaggle 官方环境仓库](https://github.com/Kaggle/kaggle-environments)
-- [Thomas Tschinkel 的公开路由器版本](https://www.kaggle.com/code/thomastschinkel/kaggriculture-93-8-win-rate-public-state-router?scriptVersionId=347936183)
-- [yhay81 的公开 shop-router](https://www.kaggle.com/code/yhay81/shop-router-0913)
+- [Kaggriculture competition](https://www.kaggle.com/competitions/kaggriculture)
+- [Official Kaggle environments repository](https://github.com/Kaggle/kaggle-environments)
+- [Thomas Tschinkel's public router version](https://www.kaggle.com/code/thomastschinkel/kaggriculture-93-8-win-rate-public-state-router?scriptVersionId=347936183)
+- [yhay81's public shop-router](https://www.kaggle.com/code/yhay81/shop-router-0913)
 
-这些链接用于追溯来源，不保证它们当前内容与历史快照相同；验证历史机制时应核对版本和源码哈希。
+These links support source tracing; their current contents are not guaranteed to match the historical snapshots. Check versions and source hashes when validating historical mechanics.
 
-## 署名与许可说明
+## Attribution and Licensing
 
-目标仓库原有的 MIT `LICENSE` 不替代 `main.py` 内第三方代码的 Apache-2.0 许可与署名要求。不要将整个 agent 重新标注为仅适用 MIT；使用和分发时需保留各部分适用的原始许可通知。
+The repository's existing MIT `LICENSE` does not replace the Apache-2.0 licensing and attribution requirements of third-party code within `main.py`. Do not relabel the entire agent as MIT-only. Retain the original license notices applicable to each part when using or distributing the code.
 
-本项目不是从零独立实现。`main.py` 保留了上游 Apache-2.0 许可文本、署名和修改记录，涉及 Kaggle / kaggle-environments 贡献者，以及 thomastschinkel、yhay81、destbreso、aurax7、tetsutani、prvsiyan、Dmitrii Gluzdov、Ahmed Berat Ozer 等源码注明的贡献者。具体归属以文件中的原始通知为准；本归档不代表这些作者的背书。
+This project was not implemented independently from scratch. `main.py` retains upstream Apache-2.0 license text, attribution, and modification records, including references to Kaggle / kaggle-environments contributors and the contributors named in the source: thomastschinkel, yhay81, destbreso, aurax7, tetsutani, prvsiyan, Dmitrii Gluzdov, and Ahmed Berat Ozer. The original notices in the file determine the specific attribution; this archive does not imply endorsement by those contributors.
 
-项目增量主要是策略整合、局内协调与防护、回执和预测一致性修补，以及通过历史对照验收的 Round54 宏观调整。发布时未删除、改写或替换上游许可通知。
+The project's additions primarily concern strategy integration, in-match coordination and safeguards, fixes for confirmation and prediction consistency, and the Round54 macro-level adjustments that passed the historical comparison tests. Upstream license notices were not removed, rewritten, or replaced during publication.
 
-**数据来源限制：** 源码原有说明指出，部分公开路由数据缺少原始逐回放来源清单。上游 notebook 的许可声明并不补全底层录像数据的权利链。本归档保留这一限制，不把来源尚不完整的数据宣称为完全独立原创或权属已全面核验；进一步分发或商业使用前，应核对相关条款与数据来源。
+**Data provenance limitation:** Existing source notes indicate that some public route data lacks a complete, replay-by-replay provenance manifest. An upstream notebook's license statement does not establish the complete rights provenance of the underlying replay data. This archive preserves that limitation and does not claim that data with incomplete provenance is wholly original or that all ownership rights have been verified. Review the relevant terms and data sources before further distribution or commercial use.
